@@ -1,0 +1,173 @@
+@import "tailwindcss";
+
+@theme {
+  --color-primary: #8C1C13; /* A deep red, fitting for the subject matter */
+  --color-primary-light: #BF4343;
+  --color-surface-cream: #FDFBF7; /* Cream paper */
+  --color-surface-sepia: #F4EFEB; /* Darker paper */
+  --color-text-light: #2A2A2A;
+  
+  --color-dark-bg: #121214;
+  --color-dark-surface: #1E1E22;
+  --color-dark-border: #2D2D34;
+  --color-dark-text: #E2E2E9;
+}
+
+/* Light theme variables (default) */
+:root {
+  --bg-app: #F5F6F8;
+  --bg-card: #FFFFFF;
+  --bg-sidebar: #F9FAFB;
+  --text-main: #1F2937;
+  --text-muted: #6B7280;
+  --border-color: rgba(0, 0, 0, 0.06);
+  --border-color-active: rgba(140, 28, 19, 0.15);
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.03);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.05);
+  --highlight-bg: rgba(252, 211, 77, 0.65); /* Warm Lemon Yellow */
+  --highlight-border: rgba(217, 119, 6, 0.7);
+  --glass-bg: rgba(252, 211, 77, 0.12);
+  --font-ui: 'Plus Jakarta Sans', system-ui, sans-serif;
+  --font-serif: 'Lora', Georgia, serif;
+}
+
+
+body {
+  background-color: var(--bg-app);
+  color: var(--text-main);
+  font-family: var(--font-ui);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+}
+
+/* ---------------------------------------------------- */
+/* PDF.js text layer selection alignment corrections   */
+/* ---------------------------------------------------- */
+.react-pdf__Page__textContent {
+  color: transparent !important;
+  opacity: 1 !important;
+  mix-blend-mode: multiply !important; /* Blend whole layer with canvas to avoid overlapping dark lines */
+}
+
+
+.react-pdf__Page__textContent span,
+.react-pdf__Page__textContent [role="presentation"] {
+  color: transparent !important;
+  -webkit-text-fill-color: transparent !important;
+  cursor: text;
+}
+
+/* Selection overlay on top of PDF image: uses high-contrast premium blue highlight */
+.react-pdf__Page__textContent span::selection,
+.react-pdf__Page__textContent [role="presentation"]::selection,
+.react-pdf__Page__textContent mark::selection {
+  background: rgba(29, 78, 216, 0.25) !important; /* Rich royal blue */
+  color: transparent !important;
+  -webkit-text-fill-color: transparent !important;
+  text-shadow: none !important;
+}
+
+
+/* Apply appropriate filters to PDF Canvas for theme consistency */
+.react-pdf__Page__canvas {
+  transition: filter 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+
+.react-pdf__Page__textContent span::-moz-selection,
+.react-pdf__Page__textContent [role="presentation"]::-moz-selection,
+.react-pdf__Page__textContent mark::-moz-selection {
+  background: rgba(29, 78, 216, 0.25) !important;
+  color: transparent !important;
+  text-shadow: none !important;
+}
+
+/* Custom search highlight marks in PDF text layer */
+.react-pdf__Page__textContent mark {
+  background-color: var(--highlight-bg) !important;
+  color: transparent !important;
+  -webkit-text-fill-color: transparent !important;
+  border-radius: 1px !important;
+  /* Slightly overlap horizontally to fill gaps completely, but flat render because of parent blend */
+  padding: 2.2px 2.4px !important;
+  margin: 0 -2.2px !important;
+  display: inline !important;
+}
+
+
+/* ---------------------------------------------------- */
+/* Optimization: UI Text Selection Protection           */
+/* ---------------------------------------------------- */
+/* By setting user-select to none on non-document UI components,
+   dragging on PDF document won't accidentally highlight sidebar/header texts */
+aside, 
+header, 
+button,
+nav,
+input,
+.no-select {
+  user-select: none;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+}
+
+/* Allow text selection in the Read Text panel */
+.selectable-text {
+  user-select: text !important;
+  -webkit-user-select: text !important;
+  -moz-user-select: text !important;
+}
+
+/* Style for yellow highlights in reading panel */
+.text-highlight {
+  background-color: #fef08a; /* yellow-200 */
+  color: #1e293b; /* slate-800 */
+  padding: 0 2px;
+  border-radius: 2px;
+  border-bottom: 1.5px solid #eab308;
+}
+
+/* ---------------------------------------------------- */
+/* Custom Styled Elements                               */
+/* ---------------------------------------------------- */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.08);
+  border-radius: 9999px;
+}
+
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.16);
+}
+
+
+/* Glassmorphism utility */
+.glass-panel {
+  background-color: rgba(253, 224, 71, 0.03);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid var(--border-color);
+}
+
+/* Premium Sepia Paper Effect */
+.sepia-paper {
+  background-color: var(--bg-card);
+  background-image: radial-gradient(circle, rgba(140, 28, 19, 0.01) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+/* General Selection style for UI */
+::selection {
+  background: rgba(29, 78, 216, 0.2) !important;
+}
