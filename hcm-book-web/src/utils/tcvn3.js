@@ -332,6 +332,18 @@ export function splitVietnameseSyllables(text) {
   return result.replace(/\s+/g, ' ').trim();
 }
 
+function fixMixedCase(text) {
+  // Regex matches words containing letters (including Vietnamese letters)
+  return text.replace(/([a-zA-ZăâđêôơưàáảãạằắẳẵặầấẩẫậèéẻẽẹềếểễệìíỉĩịòóỏõọồốổỗộờớởỡợùúủũụừứửữựỳýỷỹỵĂÂĐÊÔƠƯÀÁẢÃẠẰẮẲẴẶẦẤẨẪẬÈÉẺẼẸỀẾỂỄỆÌÍỈĨỊÒÓỎÕỌỒỐỔỖỘỜỚỞỠỢÙÚỦŨỤỪỨỬỮỰỲÝỶỸỴ]+)/g, (word) => {
+    const upperCount = (word.match(/[A-ZĂÂĐÊÔƠƯÀÁẢÃẠẰẮẲẴẶẦẤẨẪẬÈÉẺẼẸỀẾỂỄỆÌÍỈĨỊÒÓỎÕỌỒỐỔỖỘỜỚỞỠỢÙÚỦŨỤỪỨỬỮỰỲÝỶỸỴ]/g) || []).length;
+    // If a word has at least 2 uppercase letters and is not fully uppercase, it's a mixed-case artifact from .VnTimeH
+    if (upperCount >= 2 && word !== word.toUpperCase()) {
+      return word.toUpperCase();
+    }
+    return word;
+  });
+}
+
 /**
  * Converts TCVN3 (ABC) encoded string to Unicode.
  * Highly optimized, O(N) single-pass conversion.
@@ -344,7 +356,8 @@ export function tcvn3ToUnicode(text) {
   if (!text) return '';
   const cleaned = text.replace(/\s*\u2212/g, 'ư');
   const converted = cleaned.replace(TCVN3_REGEX, (match) => TCVN3_TO_UNICODE_MAP[match] || match).normalize('NFC');
-  return fixVietnameseSpacing(converted);
+  const spaced = fixVietnameseSpacing(converted);
+  return fixMixedCase(spaced);
 }
 
 /**

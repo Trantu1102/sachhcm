@@ -7,13 +7,25 @@ import { tcvn3ToUnicode, fixVietnameseSpacing } from '../src/utils/tcvn3.js';
 const workerPath = new URL('pdfjs-dist/legacy/build/pdf.worker.mjs', import.meta.url).pathname;
 
 const pdfDir = path.resolve('../PDF');
-const outputJson = path.resolve('./src/data/searchIndex.json');
+const outputJson = path.resolve('./public/searchIndex.json');
 
-async function extractTextFromPDF(pdfPath, tapNumber) {
+async function extractTextFromPDF(pdfPath, tapNumber, boSach) {
   const data = new Uint8Array(await fs.readFile(pdfPath));
   const loadingTask = pdfjsLib.getDocument({ data });
   const pdfDocument = await loadingTask.promise;
   const numPages = pdfDocument.numPages;
+  
+  let isDoublePage = false;
+  if (numPages > 0) {
+    try {
+      const firstPage = await pdfDocument.getPage(1);
+      const viewport = firstPage.getViewport({ scale: 1.0 });
+      isDoublePage = viewport.width > viewport.height;
+      console.log(`[${boSach.toUpperCase()}] Tap ${tapNumber}: width=${viewport.width.toFixed(1)}, height=${viewport.height.toFixed(1)} -> isDoublePage=${isDoublePage}`);
+    } catch (e) {
+      console.error(`Error detecting page dimensions for Tap ${tapNumber}:`, e.message);
+    }
+  }
   
   let bookIndex = [];
 
@@ -62,9 +74,11 @@ async function extractTextFromPDF(pdfPath, tapNumber) {
 
     if (unicodeText.trim()) {
         bookIndex.push({
+            boSach: boSach,
             tap: tapNumber,
             trang: pageNum,
-            text: unicodeText
+            text: unicodeText,
+            isDoublePage: isDoublePage
         });
     }
   }
@@ -74,19 +88,41 @@ async function extractTextFromPDF(pdfPath, tapNumber) {
 
 async function build() {
   console.log('Building search index...');
-  const files = await fs.readdir(pdfDir);
-  const pdfFiles = files.filter(f => f.endsWith('.pdf'));
   
   let fullIndex = [];
   
-  for (const file of pdfFiles) {
-    const match = file.match(/tap(\d+)_/i);
-    if (match) {
-        const tapNumber = parseInt(match[1]);
-        console.log(`Processing ${file} (Tap ${tapNumber})...`);
-        const indexData = await extractTextFromPDF(path.join(pdfDir, file), tapNumber);
-        fullIndex = fullIndex.concat(indexData);
+  // Index new set
+  const newPdfDir = path.resolve('../PDF/new');
+  try {
+    const files = await fs.readdir(newPdfDir);
+    const pdfFiles = files.filter(f => f.endsWith('.pdf'));
+    for (const file of pdfFiles) {
+      const match = file.match(/tap(\d+)_/i);
+      if (match) {
+          const tapNumber = parseInt(match[1]);
+          const indexData = await extractTextFromPDF(path.join(newPdfDir, file), tapNumber, 'new');
+          fullIndex = fullIndex.concat(indexData);
+      }
     }
+  } catch (e) {
+    console.error('Error reading PDF/new folder:', e.message);
+  }
+
+  // Index old set
+  const oldPdfDir = path.resolve('../PDF/old');
+  try {
+    const files = await fs.readdir(oldPdfDir);
+    const pdfFiles = files.filter(f => f.endsWith('.pdf'));
+    for (const file of pdfFiles) {
+      const match = file.match(/tap(\d+)_/i);
+      if (match) {
+          const tapNumber = parseInt(match[1]);
+          const indexData = await extractTextFromPDF(path.join(oldPdfDir, file), tapNumber, 'old');
+          fullIndex = fullIndex.concat(indexData);
+      }
+    }
+  } catch (e) {
+    console.error('Error reading PDF/old folder:', e.message);
   }
   
   await fs.mkdir(path.dirname(outputJson), { recursive: true });

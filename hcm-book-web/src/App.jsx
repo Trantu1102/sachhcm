@@ -2,7 +2,8 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import { Document, Page, pdfjs } from 'react-pdf';
 import { 
   Book, Search, Menu, X, ChevronLeft, ChevronRight, 
-  ZoomIn, ZoomOut, Sun, Moon, FileText, Copy, Check, BookOpen, Keyboard
+  ZoomIn, ZoomOut, Sun, Moon, FileText, Copy, Check, BookOpen, Keyboard,
+  Star, List, Bookmark, Filter, Clock
 } from 'lucide-react';
 import { tcvn3ToUnicode, fixVietnameseSpacing, splitVietnameseSyllables, removeVietnameseTones } from './utils/tcvn3.js';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
@@ -13,7 +14,22 @@ import 'react-pdf/dist/Page/TextLayer.css';
 pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 
 // Upgraded volumes list containing historical years details
-const VOLUMES = Array.from({ length: 12 }, (_, i) => {
+const VOLUMES_NEW = Array.from({ length: 15 }, (_, i) => {
+  const years = [
+    '1912 - 1924', '1924 - 1929', '1930 - 1945', '1945 - 1946', '1947 - 1948', '1949 - 1950',
+    '1951 - 1952', '1953 - 1954', '1954 - 1955', '1955 - 1957', '7/1957 - 12/1958', '1959 - 1960',
+    '1961 - 1962', '1963 - 1965', '1966 - 1969'
+  ][i];
+  const safeFilename = years.replace(/\s+/g, '').replace(/\//g, '-');
+  return {
+    id: i + 1,
+    title: `Tập ${i + 1}`,
+    years,
+    file: `/pdf/new/tap${i + 1}_${safeFilename}.pdf`
+  };
+});
+
+const VOLUMES_OLD = Array.from({ length: 12 }, (_, i) => {
   const years = [
     '1919 - 1924', '1924 - 1930', '1930 - 1945', '1945 - 1946', '1947 - 1949', '1950 - 1952',
     '1953 - 1955', '1955 - 1957', '1958 - 1959', '1960 - 1962', '1963 - 1965', '1966 - 1969'
@@ -22,7 +38,7 @@ const VOLUMES = Array.from({ length: 12 }, (_, i) => {
     id: i + 1,
     title: `Tập ${i + 1}`,
     years,
-    file: `/pdf/tap${i + 1}_${years.replace(/\s+/g, '')}.pdf`
+    file: `/pdf/old/tap${i + 1}_${years.replace(/\s+/g, '')}.pdf`
   };
 });
 
@@ -352,26 +368,44 @@ function PageItem({ pageNumber, width, customTextRenderer, onVisible, pageAspect
   const containerRef = useRef(null);
 
   useEffect(() => {
-    const observer = new IntersectionObserver(
+    // Observer for rendering the PDF page to prevent memory crashes when scrolling far
+    const renderObserver = new IntersectionObserver(
       ([entry]) => {
         if (entry.isIntersecting) {
           setIsVisible(true);
+        } else {
+          setIsVisible(false); // Unload page when far out of viewport
+        }
+      },
+      {
+        root: null,
+        rootMargin: '1200px 0px 1200px 0px',
+        threshold: 0
+      }
+    );
+
+    // Observer for tracking the current active page
+    const activeObserver = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
           onVisible(pageNumber);
         }
       },
       {
         root: null,
-        rootMargin: '80px 0px 80px 0px',
+        rootMargin: '0px 0px 0px 0px',
         threshold: 0.5
       }
     );
 
     if (containerRef.current) {
-      observer.observe(containerRef.current);
+      renderObserver.observe(containerRef.current);
+      activeObserver.observe(containerRef.current);
     }
 
     return () => {
-      observer.disconnect();
+      renderObserver.disconnect();
+      activeObserver.disconnect();
     };
   }, [pageNumber, onVisible]);
 
@@ -482,25 +516,61 @@ export default function App() {
   // Fix theme to light
   const theme = 'light';
 
+  // Parse hash parameters for Deep Linking
+  const getHashParams = () => {
+    const hash = window.location.hash;
+    if (hash && hash.startsWith('#/?')) {
+      const params = new URLSearchParams(hash.substring(2));
+      return {
+        set: params.get('set'),
+        vol: params.get('vol') ? parseInt(params.get('vol')) : null,
+        page: params.get('page') ? parseInt(params.get('page')) : null,
+        q: params.get('q') || ''
+      };
+    }
+    return {};
+  };
+
+  const initialParams = getHashParams();
+
+  const [currentBookSet, setCurrentBookSet] = useState(() => {
+    return initialParams.set || localStorage.getItem('hcm_book_current_set') || 'new';
+  });
+
+  const VOLUMES = currentBookSet === 'new' ? VOLUMES_NEW : VOLUMES_OLD;
+
   const [currentVolume, setCurrentVolume] = useState(() => {
-    const savedVolId = localStorage.getItem('hcm_book_current_vol');
-    if (savedVolId) {
-      const vol = VOLUMES.find(v => v.id === parseInt(savedVolId));
+    const savedSet = initialParams.set || localStorage.getItem('hcm_book_current_set') || 'new';
+    const targetVolumes = savedSet === 'new' ? VOLUMES_NEW : VOLUMES_OLD;
+    const volId = initialParams.vol || parseInt(localStorage.getItem('hcm_book_current_vol'));
+    if (volId) {
+      const vol = targetVolumes.find(v => v.id === volId);
       if (vol) return vol;
     }
-    return VOLUMES[0];
+    return targetVolumes[0];
   });
 
   const [pageNumber, setPageNumber] = useState(() => {
-    const savedPage = localStorage.getItem('hcm_book_page');
-    return savedPage ? parseInt(savedPage) : 1;
+    return initialParams.page || (localStorage.getItem('hcm_book_page') ? parseInt(localStorage.getItem('hcm_book_page')) : 1);
   });
 
   const [numPages, setNumPages] = useState(null);
   const [isSidebarOpen, setSidebarOpen] = useState(true);
-  const [isTextPanelOpen, setIsTextPanelOpen] = useState(false);
+  const [isTextPanelOpen, setIsTextPanelOpen] = useState(true);
   const [copied, setCopied] = useState(false);
   const [showShortcuts, setShowShortcuts] = useState(false);
+
+  // New states for Sidebar Tabs, Search Scope, Bookmarks, and History
+  const [activeSidebarTab, setActiveSidebarTab] = useState('volumes'); // 'volumes', 'toc', 'bookmarks'
+  const [searchScope, setSearchScope] = useState('all'); // 'all', 'current_vol'
+  const [bookmarks, setBookmarks] = useState(() => {
+    const saved = localStorage.getItem('hcm_book_bookmarks');
+    return saved ? JSON.parse(saved) : [];
+  });
+  const [history, setHistory] = useState(() => {
+    const saved = localStorage.getItem('hcm_book_history');
+    return saved ? JSON.parse(saved) : [];
+  });
 
   // Toast notifications for session restore
   const [showRestoreToast, setShowRestoreToast] = useState(false);
@@ -510,7 +580,7 @@ export default function App() {
   const [isEditingPage, setIsEditingPage] = useState(false);
   const [pageInputVal, setPageInputVal] = useState('1');
 
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState(initialParams.q || '');
   const [searchResults, setSearchResults] = useState([]);
   const [searchIndex, setSearchIndex] = useState([]);
   const [isIndexLoading, setIsIndexLoading] = useState(true);
@@ -546,6 +616,20 @@ export default function App() {
   const [zoom, setZoom] = useState(1.0);
   const [pageAspectRatio, setPageAspectRatio] = useState(0.707);
   
+  const isCurrentVolumeDoublePage = searchIndex.some(
+    item => item.boSach === currentBookSet && item.tap === currentVolume.id && item.isDoublePage
+  );
+
+  const handleSwitchBookSet = (set) => {
+    setCurrentBookSet(set);
+    const targetVolumes = set === 'new' ? VOLUMES_NEW : VOLUMES_OLD;
+    setCurrentVolume(targetVolumes[0]);
+    setPageNumber(1);
+    localStorage.setItem('hcm_book_current_set', set);
+    localStorage.setItem('hcm_book_current_vol', '1');
+    localStorage.setItem('hcm_book_page', '1');
+  };
+  
   const containerRef = useRef(null);
   const pdfAreaRef = useRef(null);
   const isComposingRef = useRef(false);
@@ -564,16 +648,86 @@ export default function App() {
 
   // Synchronize jump page input value and save page to localStorage
   useEffect(() => {
-    setPageInputVal(pageNumber.toString());
+    const displayVal = isCurrentVolumeDoublePage ? (pageNumber * 2).toString() : pageNumber.toString();
+    setPageInputVal(displayVal);
     if (pageNumber > 0) {
       localStorage.setItem('hcm_book_page', pageNumber.toString());
     }
-  }, [pageNumber]);
+  }, [pageNumber, isCurrentVolumeDoublePage]);
 
   // Sync current volume to localStorage
   useEffect(() => {
     localStorage.setItem('hcm_book_current_vol', currentVolume.id.toString());
   }, [currentVolume]);
+
+  // Sync URL hash (Deep Linking)
+  useEffect(() => {
+    const params = new URLSearchParams();
+    params.set('set', currentBookSet);
+    params.set('vol', currentVolume.id);
+    params.set('page', pageNumber);
+    if (searchQuery && searchQuery.trim().length >= 2) {
+      params.set('q', searchQuery);
+    }
+    const newHash = `/?${params.toString()}`;
+    if (window.location.hash !== `#${newHash}`) {
+      window.history.replaceState(null, '', `#${newHash}`);
+    }
+  }, [currentBookSet, currentVolume.id, pageNumber, searchQuery]);
+
+  // Auto save history when navigating to a new page
+  useEffect(() => {
+    if (pageNumber > 0 && currentVolume) {
+      setHistory(prev => {
+        const newItem = { id: Date.now(), set: currentBookSet, volId: currentVolume.id, volTitle: currentVolume.title, page: pageNumber, q: searchQuery, timestamp: Date.now() };
+        const filtered = prev.filter(item => !(item.set === currentBookSet && item.volId === currentVolume.id && item.page === pageNumber));
+        const newHistory = [newItem, ...filtered].slice(0, 15);
+        localStorage.setItem('hcm_book_history', JSON.stringify(newHistory));
+        return newHistory;
+      });
+    }
+  }, [currentBookSet, currentVolume.id, pageNumber]);
+
+  const toggleBookmark = () => {
+    const isBookmarked = bookmarks.some(b => b.set === currentBookSet && b.volId === currentVolume.id && b.page === pageNumber);
+    let newBookmarks;
+    if (isBookmarked) {
+      newBookmarks = bookmarks.filter(b => !(b.set === currentBookSet && b.volId === currentVolume.id && b.page === pageNumber));
+    } else {
+      newBookmarks = [{ id: Date.now(), set: currentBookSet, volId: currentVolume.id, volTitle: currentVolume.title, page: pageNumber, q: searchQuery, timestamp: Date.now() }, ...bookmarks];
+    }
+    setBookmarks(newBookmarks);
+    localStorage.setItem('hcm_book_bookmarks', JSON.stringify(newBookmarks));
+  };
+
+  const jumpToLocation = (set, volId, page, q = '') => {
+    if (q) {
+      setSearchQuery(q);
+      if (q.trim().length >= 2) {
+        runSearch(q);
+      }
+    } else {
+      setSearchQuery('');
+      setSearchResults([]);
+    }
+
+    if (set !== currentBookSet) {
+      handleSwitchBookSet(set);
+    }
+    const targetVolumes = set === 'new' ? VOLUMES_NEW : VOLUMES_OLD;
+    const vol = targetVolumes.find(v => v.id === volId);
+    if (vol && vol.id !== currentVolume.id) {
+      setCurrentVolume(vol);
+      setTimeout(() => {
+        setPageNumber(page);
+        jumpToPage(page);
+      }, 600);
+    } else {
+      setPageNumber(page);
+      jumpToPage(page);
+    }
+    if (window.innerWidth < 1024) setSidebarOpen(false);
+  };
 
   // Show session restore message on initial load
   useEffect(() => {
@@ -670,11 +824,13 @@ export default function App() {
   const handlePageSubmit = (e) => {
     e.preventDefault();
     const val = parseInt(pageInputVal);
-    if (!isNaN(val) && val >= 1 && val <= numPages) {
-      setPageNumber(val);
-      jumpToPage(val);
+    const maxVal = isCurrentVolumeDoublePage ? numPages * 2 : numPages;
+    if (!isNaN(val) && val >= 1 && val <= maxVal) {
+      const pdfPage = isCurrentVolumeDoublePage ? Math.ceil(val / 2) : val;
+      setPageNumber(pdfPage);
+      jumpToPage(pdfPage);
     } else {
-      setPageInputVal(pageNumber.toString());
+      setPageInputVal(isCurrentVolumeDoublePage ? (pageNumber * 2).toString() : pageNumber.toString());
     }
     setIsEditingPage(false);
   };
@@ -723,6 +879,8 @@ export default function App() {
     const results = [];
     for (let i = 0; i < searchIndex.length; i++) {
       const item = searchIndex[i];
+      if (item.boSach !== currentBookSet) continue;
+      if (searchScope === 'current_vol' && item.tap !== currentVolume.id) continue;
       let score = 0;
 
       if (item.textNormalized.includes(queryClean)) {
@@ -755,6 +913,14 @@ export default function App() {
     setSearchResults(results.slice(0, 50));
   };
 
+
+  useEffect(() => {
+    if (searchQuery && searchQuery.trim().length >= 2) {
+      runSearch(searchQuery);
+    } else {
+      setSearchResults([]);
+    }
+  }, [searchScope]);
   const handleSearch = (e) => {
     if (isComposingRef.current) {
       setSearchQuery(e.target.value);
@@ -778,12 +944,18 @@ export default function App() {
   };
 
   const navigateToResult = (result) => {
-    const volume = VOLUMES.find(v => v.id === result.tap);
+    const targetSet = result.boSach || 'new';
+    if (targetSet !== currentBookSet) {
+      setCurrentBookSet(targetSet);
+      localStorage.setItem('hcm_book_current_set', targetSet);
+    }
+    const targetVolumes = targetSet === 'new' ? VOLUMES_NEW : VOLUMES_OLD;
+    const volume = targetVolumes.find(v => v.id === result.tap);
     if (volume) {
       if (window.innerWidth < 1024) {
         setSidebarOpen(false);
       }
-      if (currentVolume.id !== volume.id) {
+      if (currentVolume.id !== volume.id || currentBookSet !== targetSet) {
         setCurrentVolume(volume);
         setTimeout(() => {
           setPageNumber(result.trang);
@@ -798,7 +970,7 @@ export default function App() {
 
   // Find the clean unicode text for the current page
   const currentPageData = searchIndex.find(
-    item => item.tap === currentVolume.id && item.trang === pageNumber
+    item => item.boSach === currentBookSet && item.tap === currentVolume.id && item.trang === pageNumber
   );
   const currentPageText = currentPageData ? currentPageData.text : '';
 
@@ -862,33 +1034,133 @@ export default function App() {
           </button>
         </div>
 
-        {/* Search Box */}
-        <div className="p-4 border-b border-neutral-200 dark:border-neutral-800 bg-neutral-50/50 dark:bg-neutral-900/30">
-          <div className="relative">
-            {isIndexLoading ? (
-              <div className="absolute left-3 top-1/2 transform -translate-y-1/2 flex items-center justify-center">
-                <div className="animate-spin rounded-full h-3.5 w-3.5 border-b-2 border-primary dark:border-red-500"></div>
-              </div>
-            ) : (
-              <Search size={16} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-neutral-400 dark:text-neutral-500" />
-            )}
-            <input 
-              type="text"
-              placeholder={isIndexLoading ? "Đang tải cơ sở dữ liệu..." : "Tra cứu văn bản..."}
-              value={searchQuery}
-              onChange={handleSearch}
-              onCompositionStart={() => { isComposingRef.current = true; }}
-              onCompositionEnd={handleCompositionEnd}
-              onPaste={handlePaste}
-              disabled={isIndexLoading}
-              className="w-full pl-9 pr-4 py-2 text-sm bg-white dark:bg-[#1E1E22] border border-neutral-200 dark:border-neutral-800 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent dark:focus:ring-red-700 transition-all text-neutral-800 dark:text-neutral-200 placeholder-neutral-400 disabled:opacity-60 disabled:cursor-not-allowed"
-            />
-          </div>
+        
+        {/* Sidebar Tabs */}
+        <div className="flex border-b border-neutral-200 dark:border-neutral-800 bg-white dark:bg-[#1E1E22]">
+          <button onClick={() => setActiveSidebarTab('volumes')} className={`flex-1 py-3 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors ${activeSidebarTab === 'volumes' ? 'text-primary dark:text-red-400 border-b-2 border-primary dark:border-red-500 bg-neutral-50 dark:bg-neutral-900/30' : 'text-neutral-500 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200'}`}>
+            <Book size={14} /> Tập sách
+          </button>
+          <button onClick={() => setActiveSidebarTab('bookmarks')} className={`flex-1 py-3 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors ${activeSidebarTab === 'bookmarks' ? 'text-primary dark:text-red-400 border-b-2 border-primary dark:border-red-500 bg-neutral-50 dark:bg-neutral-900/30' : 'text-neutral-500 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200'}`}>
+            <Star size={14} /> Đã lưu
+          </button>
         </div>
 
-        {/* Volumes list / Search results list */}
+        {activeSidebarTab === 'volumes' && (
+          <>
+            {/* Book Set Selector */}
+            <div className="p-4 border-b border-neutral-200/60 dark:border-neutral-800/60 bg-neutral-50/50 dark:bg-neutral-900/10">
+              <label className="block text-[10px] font-bold text-neutral-400 dark:text-neutral-500 uppercase tracking-wider mb-2">Chọn bộ tư liệu</label>
+              <div className="flex gap-1.5 p-1 bg-neutral-100 dark:bg-neutral-900 rounded-lg border border-neutral-200/50 dark:border-neutral-800/50">
+                <button
+                  onClick={() => handleSwitchBookSet('new')}
+                  className={`flex-1 py-1.5 px-2.5 rounded-md text-xs font-semibold transition-all cursor-pointer ${
+                    currentBookSet === 'new'
+                      ? 'bg-white dark:bg-[#1E1E22] text-primary dark:text-red-400 shadow-sm border border-neutral-200/20'
+                      : 'text-neutral-500 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200'
+                  }`}
+                >
+                  Bộ mới (15 tập)
+                </button>
+                <button
+                  onClick={() => handleSwitchBookSet('old')}
+                  className={`flex-1 py-1.5 px-2.5 rounded-md text-xs font-semibold transition-all cursor-pointer ${
+                    currentBookSet === 'old'
+                      ? 'bg-white dark:bg-[#1E1E22] text-primary dark:text-red-400 shadow-sm border border-neutral-200/20'
+                      : 'text-neutral-500 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200'
+                  }`}
+                >
+                  Bộ cũ (12 tập)
+                </button>
+              </div>
+            </div>
+
+            {/* Search Box */}
+            <div className="p-4 border-b border-neutral-200 dark:border-neutral-800 bg-neutral-50/50 dark:bg-neutral-900/30">
+              <div className="relative mb-3">
+                {isIndexLoading ? (
+                  <div className="absolute left-3 top-1/2 transform -translate-y-1/2 flex items-center justify-center">
+                    <div className="animate-spin rounded-full h-3.5 w-3.5 border-b-2 border-primary dark:border-red-500"></div>
+                  </div>
+                ) : (
+                  <Search size={16} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-neutral-400 dark:text-neutral-500" />
+                )}
+                <input 
+                  type="text"
+                  placeholder={isIndexLoading ? "Đang tải cơ sở dữ liệu..." : "Tra cứu văn bản..."}
+                  value={searchQuery}
+                  onChange={handleSearch}
+                  onCompositionStart={() => { isComposingRef.current = true; }}
+                  onCompositionEnd={handleCompositionEnd}
+                  onPaste={handlePaste}
+                  disabled={isIndexLoading}
+                  className="w-full pl-9 pr-4 py-2 text-sm bg-white dark:bg-[#1E1E22] border border-neutral-200 dark:border-neutral-800 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent dark:focus:ring-red-700 transition-all text-neutral-800 dark:text-neutral-200 placeholder-neutral-400 disabled:opacity-60 disabled:cursor-not-allowed"
+                />
+              </div>
+              <div className="flex items-center justify-between text-[11px]">
+                <span className="font-semibold text-neutral-500 flex items-center gap-1"><Filter size={12}/> Phạm vi tìm kiếm:</span>
+                <select 
+                  value={searchScope}
+                  onChange={(e) => setSearchScope(e.target.value)}
+                  className="bg-transparent text-primary dark:text-red-400 font-bold focus:outline-none cursor-pointer"
+                >
+                  <option value="all">Toàn bộ sách</option>
+                  <option value="current_vol">Chỉ Tập {currentVolume.id}</option>
+                </select>
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* Volumes list / Search results list / TOC / Bookmarks */}
         <div className="flex-1 overflow-y-auto custom-scrollbar p-2">
-          {searchQuery.length >= 2 ? (
+          {activeSidebarTab === 'bookmarks' ? (
+            <div className="space-y-4 px-1">
+              <div>
+                <h3 className="text-[11px] font-bold text-neutral-400 dark:text-neutral-500 uppercase tracking-wider mb-2 flex items-center gap-1.5"><Star size={12}/> Trang đã lưu ({bookmarks.length})</h3>
+                {bookmarks.length === 0 ? (
+                  <p className="text-xs text-neutral-400 italic">Chưa có trang nào được lưu.</p>
+                ) : (
+                  bookmarks.map((bm, idx) => (
+                    <div key={idx} className="w-full text-left p-3 bg-neutral-50/50 dark:bg-neutral-900/20 border border-neutral-200 dark:border-neutral-800 rounded-lg mb-2 relative group">
+                      <button onClick={() => jumpToLocation(bm.set, bm.volId, bm.page, bm.q)} className="block w-full text-left cursor-pointer">
+                        <p className="text-xs font-bold text-primary dark:text-red-400 mb-1">{bm.volTitle} - Trang {bm.page}</p>
+                        <p className="text-[10px] text-neutral-500">Bộ {bm.set === 'new' ? 'Mới' : 'Cũ'} • Đã lưu {new Date(bm.timestamp).toLocaleDateString('vi-VN')}</p>
+                      </button>
+                      <button 
+                        onClick={() => {
+                          const newBms = bookmarks.filter(b => b.id !== bm.id);
+                          setBookmarks(newBms);
+                          localStorage.setItem('hcm_book_bookmarks', JSON.stringify(newBms));
+                        }}
+                        className="absolute top-2 right-2 p-1.5 text-neutral-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-md transition-colors opacity-0 group-hover:opacity-100"
+                        title="Xóa Bookmark"
+                      >
+                        <X size={14}/>
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
+              <div className="pt-2 border-t border-neutral-200 dark:border-neutral-800">
+                <h3 className="text-[11px] font-bold text-neutral-400 dark:text-neutral-500 uppercase tracking-wider mb-2 flex items-center gap-1.5"><Clock size={12}/> Lịch sử đọc</h3>
+                {history.length === 0 ? (
+                  <p className="text-xs text-neutral-400 italic">Chưa có lịch sử.</p>
+                ) : (
+                  history.map((h, idx) => (
+                    <button 
+                      key={idx}
+                      onClick={() => jumpToLocation(h.set, h.volId, h.page, h.q)}
+                      className="w-full text-left py-2 px-2 hover:bg-neutral-100 dark:hover:bg-neutral-800/40 rounded transition-colors flex items-center justify-between group cursor-pointer"
+                    >
+                      <span className="text-xs font-medium text-neutral-600 dark:text-neutral-400 group-hover:text-neutral-900 dark:group-hover:text-neutral-200 truncate">
+                        {h.volTitle} - Tr.{h.page}
+                      </span>
+                    </button>
+                  ))
+                )}
+              </div>
+            </div>
+          ) : searchQuery.length >= 2 ? (
             <div className="space-y-1">
               <h3 className="text-[11px] font-bold text-neutral-400 dark:text-neutral-500 uppercase tracking-wider mb-2 px-2">Kết quả tìm kiếm ({searchResults.length})</h3>
               {searchResults.length === 0 ? (
@@ -901,7 +1173,7 @@ export default function App() {
                     className="w-full text-left px-4 py-3 hover:bg-neutral-50 dark:hover:bg-neutral-800/40 rounded-lg mb-1 transition-all border border-neutral-100 dark:border-neutral-800/60 flex items-center justify-between shadow-sm bg-neutral-50/30 dark:bg-neutral-900/10 group cursor-pointer"
                   >
                     <span className="text-sm font-semibold text-neutral-700 dark:text-neutral-300 group-hover:text-primary dark:group-hover:text-red-400 transition-colors">
-                      Tập {result.tap} — Trang {result.trang}
+                      Tập {result.tap} — {result.isDoublePage ? `Trang ${result.trang * 2 - 1}-${result.trang * 2} (Tờ ${result.trang})` : `Trang ${result.trang}`}
                     </span>
                     <ChevronRight size={14} className="text-neutral-400 group-hover:text-primary dark:group-hover:text-red-400 transition-all group-hover:translate-x-0.5" />
                   </button>
@@ -910,7 +1182,9 @@ export default function App() {
             </div>
           ) : (
             <div className="space-y-0.5">
-              <h3 className="text-[11px] font-bold text-neutral-400 dark:text-neutral-500 uppercase tracking-wider mb-2 px-2">Danh mục 12 tập</h3>
+              <h3 className="text-[11px] font-bold text-neutral-400 dark:text-neutral-500 uppercase tracking-wider mb-2 px-2">
+                {currentBookSet === 'new' ? 'Danh mục 15 tập mới' : 'Danh mục 12 tập cũ'}
+              </h3>
               {VOLUMES.map((vol) => (
                 <button
                   key={vol.id}
@@ -948,7 +1222,9 @@ export default function App() {
                 <Menu size={20} />
               </button>
             )}
-            <h2 className="text-base font-bold text-neutral-800 dark:text-neutral-200 tracking-tight">{currentVolume.title}</h2>
+            <h2 className="text-base font-bold text-neutral-800 dark:text-neutral-200 tracking-tight">
+              {currentBookSet === 'new' ? 'Hồ Chí Minh Toàn Tập' : 'HCM Toàn Tập Cũ'} — {currentVolume.title}
+            </h2>
           </div>
           
           <div className="flex items-center gap-2 sm:gap-3">
@@ -999,14 +1275,14 @@ export default function App() {
                   <input 
                     type="number"
                     min={1}
-                    max={numPages || 1}
+                    max={isCurrentVolumeDoublePage ? (numPages * 2 || 1) : (numPages || 1)}
                     value={pageInputVal}
                     onChange={(e) => setPageInputVal(e.target.value)}
                     onBlur={handlePageSubmit}
                     className="w-11 text-center text-xs font-bold py-0.5 bg-white dark:bg-[#1E1E22] border border-neutral-300 dark:border-neutral-700 rounded focus:outline-none focus:ring-1 focus:ring-primary focus:border-transparent"
                     autoFocus
                   />
-                  <span className="text-xs font-semibold text-neutral-400 ml-1">/ {numPages || '--'}</span>
+                  <span className="text-xs font-semibold text-neutral-400 ml-1">/ {isCurrentVolumeDoublePage ? (numPages * 2 || '--') : (numPages || '--')}</span>
                 </form>
               ) : (
                 <span 
@@ -1014,7 +1290,7 @@ export default function App() {
                   className="text-xs font-bold text-neutral-750 dark:text-neutral-300 min-w-[70px] text-center select-none cursor-pointer hover:bg-white/60 dark:hover:bg-[#1E1E22] px-2 py-0.5 rounded transition-all"
                   title="Click để nhập số trang cần nhảy tới"
                 >
-                  Trang {pageNumber} / {numPages || '--'}
+                  {isCurrentVolumeDoublePage ? `Trang ${pageNumber * 2 - 1}-${pageNumber * 2} / ${numPages * 2} (Tờ ${pageNumber} / ${numPages})` : `Trang ${pageNumber} / ${numPages || '--'}`}
                 </span>
               )}
 
@@ -1153,12 +1429,23 @@ export default function App() {
                         <h3 className="font-bold text-sm tracking-tight text-neutral-800 dark:text-neutral-200">Bản Trích Văn Bản</h3>
                         <p className="text-[11px] font-medium text-neutral-500 dark:text-neutral-400">
                           {hasActiveSearch 
-                            ? `Đoạn trích tìm kiếm — Tập ${currentVolume.id} Trang ${pageNumber}` 
-                            : `Tập ${currentVolume.id} — Trang ${pageNumber}`}
+                            ? `Đoạn trích tìm kiếm — Tập ${currentVolume.id} ${isCurrentVolumeDoublePage ? `Trang ${pageNumber * 2 - 1}-${pageNumber * 2} (Tờ ${pageNumber})` : `Trang ${pageNumber}`}` 
+                            : `Tập ${currentVolume.id} — ${isCurrentVolumeDoublePage ? `Trang ${pageNumber * 2 - 1}-${pageNumber * 2} (Tờ ${pageNumber})` : `Trang ${pageNumber}`}`}
                         </p>
                       </div>
                       
                       <div className="flex items-center gap-1.5">
+                        <button
+                          onClick={toggleBookmark}
+                          className={`p-2 rounded-lg border text-xs font-semibold shadow-sm transition-all cursor-pointer ${
+                            bookmarks.some(b => b.set === currentBookSet && b.volId === currentVolume.id && b.page === pageNumber)
+                              ? 'bg-amber-100 border-amber-200 text-amber-500 dark:bg-amber-500/20 dark:border-amber-500/30 dark:text-amber-400' 
+                              : 'bg-white dark:bg-[#1E1E22] hover:bg-neutral-50 dark:hover:bg-neutral-800 border-neutral-200 dark:border-neutral-800 text-neutral-400 dark:text-neutral-500 hover:text-amber-500'
+                          }`}
+                          title="Lưu trang này"
+                        >
+                          <Star size={14} fill={bookmarks.some(b => b.set === currentBookSet && b.volId === currentVolume.id && b.page === pageNumber) ? "currentColor" : "none"} />
+                        </button>
                         <button 
                           onClick={handleCopyPageText}
                           disabled={!currentPageText || (isSearching && !hasSnippets)}
