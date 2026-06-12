@@ -4,9 +4,6 @@ import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { tcvn3ToUnicode, fixVietnameseSpacing } from '../src/utils/tcvn3.js';
 
 // Set up the worker for pdfjs
-const workerPath = new URL('pdfjs-dist/legacy/build/pdf.worker.mjs', import.meta.url).pathname;
-
-const pdfDir = path.resolve('../PDF');
 const outputJson = path.resolve('./public/searchIndex.json');
 
 async function extractTextFromPDF(pdfPath, tapNumber, boSach) {

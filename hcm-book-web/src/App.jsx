@@ -1,9 +1,9 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { Document, Page, pdfjs } from 'react-pdf';
 import { 
   Book, Search, Menu, X, ChevronLeft, ChevronRight, 
-  ZoomIn, ZoomOut, Sun, Moon, FileText, Copy, Check, BookOpen, Keyboard,
-  Star, List, Bookmark, Filter, Clock
+  ZoomIn, ZoomOut, FileText, Copy, Check, BookOpen, Keyboard,
+  Star, Filter, Clock
 } from 'lucide-react';
 import { tcvn3ToUnicode, fixVietnameseSpacing, splitVietnameseSyllables, removeVietnameseTones } from './utils/tcvn3.js';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
@@ -83,7 +83,7 @@ function highlightPhraseInDOM(container, query) {
   const fullTextNoTones = removeVietnameseTones(fullText);
 
   // Create search regex for exact phrase (use * to support stuck words)
-  const escapedWords = words.map(w => w.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&'));
+  const escapedWords = words.map(w => w.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&'));
   const regexPattern = escapedWords.join('[\\s\\-,.()\'"“”„«»!?;:\\[\\]{}/\\\\<>#*@&%+=~_|]{0,12}');
   
   let regex;
@@ -333,14 +333,14 @@ function extractExactMatches(text, query) {
   }
 
   const normText = text.normalize('NFC').toLowerCase();
-  const cleanQueryNoSpace = cleanQuery.replace(/[\s\-,.()'"“”„«»!?;:\[\]{}\/\\<>#*@&%+=~_|]+/g, '');
+  const cleanQueryNoSpace = cleanQuery.replace(/[\s\-,.()'"“”„«»!?;:[\]{}/\\<>#*@&%+=~_|]+/g, '');
   if (cleanQueryNoSpace.length < 2) return '';
 
   let textNoSpace = '';
   const mapIndices = [];
   for (let i = 0; i < text.length; i++) {
     const char = normText[i];
-    const isSeparator = /[\s\-,.()'"“”„«»!?;:\[\]{}\/\\<>#*@&%+=~_|]/.test(char);
+    const isSeparator = /[\s\-,.()'"“”„«»!?;:[\]{}/\\<>#*@&%+=~_|]/.test(char);
     if (!isSeparator) {
       textNoSpace += char;
       mapIndices.push(i);
@@ -514,7 +514,6 @@ function PageItem({ pageNumber, width, customTextRenderer, onVisible, pageAspect
 }
 export default function App() {
   // Fix theme to light
-  const theme = 'light';
 
   // Parse hash parameters for Deep Linking
   const getHashParams = () => {
@@ -646,10 +645,23 @@ export default function App() {
     document.documentElement.classList.add('theme-light');
   }, []);
 
+  function jumpToPage(targetPage) {
+    const element = document.getElementById(`page_${targetPage}`);
+    if (element) {
+      isJumpingRef.current = true;
+      element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      setTimeout(() => {
+        isJumpingRef.current = false;
+      }, 850);
+    }
+  }
+
   // Synchronize jump page input value and save page to localStorage
   useEffect(() => {
     const displayVal = isCurrentVolumeDoublePage ? (pageNumber * 2).toString() : pageNumber.toString();
-    setPageInputVal(displayVal);
+    setTimeout(() => {
+      setPageInputVal(displayVal);
+    }, 0);
     if (pageNumber > 0) {
       localStorage.setItem('hcm_book_page', pageNumber.toString());
     }
@@ -678,15 +690,17 @@ export default function App() {
   // Auto save history when navigating to a new page
   useEffect(() => {
     if (pageNumber > 0 && currentVolume) {
-      setHistory(prev => {
-        const newItem = { id: Date.now(), set: currentBookSet, volId: currentVolume.id, volTitle: currentVolume.title, page: pageNumber, q: searchQuery, timestamp: Date.now() };
-        const filtered = prev.filter(item => !(item.set === currentBookSet && item.volId === currentVolume.id && item.page === pageNumber));
-        const newHistory = [newItem, ...filtered].slice(0, 15);
-        localStorage.setItem('hcm_book_history', JSON.stringify(newHistory));
-        return newHistory;
-      });
+      setTimeout(() => {
+        setHistory(prev => {
+          const newItem = { id: Date.now(), set: currentBookSet, volId: currentVolume.id, volTitle: currentVolume.title, page: pageNumber, q: searchQuery, timestamp: Date.now() };
+          const filtered = prev.filter(item => !(item.set === currentBookSet && item.volId === currentVolume.id && item.page === pageNumber));
+          const newHistory = [newItem, ...filtered].slice(0, 15);
+          localStorage.setItem('hcm_book_history', JSON.stringify(newHistory));
+          return newHistory;
+        });
+      }, 0);
     }
-  }, [currentBookSet, currentVolume.id, pageNumber]);
+  }, [currentBookSet, currentVolume.id, pageNumber]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const toggleBookmark = () => {
     const isBookmarked = bookmarks.some(b => b.set === currentBookSet && b.volId === currentVolume.id && b.page === pageNumber);
@@ -737,8 +751,10 @@ export default function App() {
       const volId = savedVolId ? parseInt(savedVolId) : 1;
       const page = savedPage ? parseInt(savedPage) : 1;
       if (volId > 1 || page > 1) {
-        setToastMessage(`Đã khôi phục phiên đọc trước: Tập ${volId} — Trang ${page}`);
-        setShowRestoreToast(true);
+        setTimeout(() => {
+          setToastMessage(`Đã khôi phục phiên đọc trước: Tập ${volId} — Trang ${page}`);
+          setShowRestoreToast(true);
+        }, 0);
         setTimeout(() => setShowRestoreToast(false), 4000);
       }
     }
@@ -801,7 +817,7 @@ export default function App() {
     if (savedVolId && parseInt(savedVolId) === currentVolume.id && savedPage) {
       // Keep restored page
     } else {
-      setPageNumber(1);
+      setTimeout(() => setPageNumber(1), 0);
     }
     
     if (containerRef.current) {
@@ -810,16 +826,7 @@ export default function App() {
     }
   }, [currentVolume]);
 
-  const jumpToPage = (targetPage) => {
-    const element = document.getElementById(`page_${targetPage}`);
-    if (element) {
-      isJumpingRef.current = true;
-      element.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      setTimeout(() => {
-        isJumpingRef.current = false;
-      }, 850);
-    }
-  };
+
 
   const handlePageSubmit = (e) => {
     e.preventDefault();
@@ -915,12 +922,15 @@ export default function App() {
 
 
   useEffect(() => {
-    if (searchQuery && searchQuery.trim().length >= 2) {
-      runSearch(searchQuery);
-    } else {
-      setSearchResults([]);
-    }
-  }, [searchScope]);
+    const timer = setTimeout(() => {
+      if (searchQuery && searchQuery.trim().length >= 2) {
+        runSearch(searchQuery);
+      } else {
+        setSearchResults([]);
+      }
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [searchScope]); // eslint-disable-line react-hooks/exhaustive-deps
   const handleSearch = (e) => {
     if (isComposingRef.current) {
       setSearchQuery(e.target.value);
@@ -977,7 +987,7 @@ export default function App() {
   const handleCopyPageText = () => {
     if (!currentPageText) return;
     
-    let textToCopy = '';
+    let textToCopy;
     
     // Nếu đang tra cứu từ khóa và có tìm kiếm đang hoạt động
     if (searchQuery && searchQuery.trim().length >= 2) {

@@ -46,7 +46,9 @@ const oldYearRanges = {
 async function recreateDir(dirPath) {
   try {
     await fs.rm(dirPath, { recursive: true, force: true });
-  } catch (e) {}
+  } catch {
+    /* ignore */
+  }
   await fs.mkdir(dirPath, { recursive: true });
 }
 
